@@ -59,7 +59,7 @@ export async function request<T = any>(
   return data as T
 }
 
-/** SSE 流式对话。 */
+/** SSE 流式对话（可携带多轮上下文）。 */
 export async function streamChat(
   message: string,
   handlers: {
@@ -68,6 +68,7 @@ export async function streamChat(
     onDone?: () => void
     onError?: (error: Error) => void
   },
+  history: { role: string; content: string }[] = [],
 ): Promise<void> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -81,7 +82,7 @@ export async function streamChat(
     response = await fetch('/api/ai/chat', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, history }),
     })
   } catch {
     handlers.onError?.(new Error('网络连接失败，请确认后端已启动'))

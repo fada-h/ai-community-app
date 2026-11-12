@@ -43,38 +43,51 @@ async function send(text?: string) {
   errorText.value = ''
   lastQuestion.value = question
 
+  // 带着最近几轮对话一起发，追问才能接得上
+  const history = messages.value
+    .filter((item) => item.text && !item.error)
+    .slice(-8)
+    .map((item) => ({
+      role: item.role === 'me' ? 'user' : 'assistant',
+      content: item.text,
+    }))
+
   messages.value.push({ id: ++seq, role: 'me', text: question })
   const target: ChatMessage = { id: ++seq, role: 'ai', text: '', pending: true }
   messages.value.push(target)
   streaming.value = true
   scrollToBottom()
 
-  await streamChat(question, {
-    onMeta(meta) {
-      target.meta = meta
-      if (meta.suggestions?.length) suggestions.value = meta.suggestions.slice(0, 4)
-      target.pending = false
-      scrollToBottom()
+  await streamChat(
+    question,
+    {
+      onMeta(meta) {
+        target.meta = meta
+        if (meta.suggestions?.length) suggestions.value = meta.suggestions.slice(0, 4)
+        target.pending = false
+        scrollToBottom()
+      },
+      onDelta(chunk) {
+        target.text += chunk
+        target.pending = false
+        scrollToBottom()
+      },
+      onDone() {
+        target.pending = false
+        streaming.value = false
+        scrollToBottom()
+      },
+      onError(error) {
+        target.pending = false
+        target.error = true
+        target.text = target.text || '抱歉，这次没有连接上 AI 服务。'
+        errorText.value = error.message
+        streaming.value = false
+        scrollToBottom()
+      },
     },
-    onDelta(chunk) {
-      target.text += chunk
-      target.pending = false
-      scrollToBottom()
-    },
-    onDone() {
-      target.pending = false
-      streaming.value = false
-      scrollToBottom()
-    },
-    onError(error) {
-      target.pending = false
-      target.error = true
-      target.text = target.text || '抱歉，这次没有连接上 AI 服务。'
-      errorText.value = error.message
-      streaming.value = false
-      scrollToBottom()
-    },
-  })
+    history,
+  )
 }
 
 function retry(message: ChatMessage) {
@@ -157,7 +170,9 @@ defineExpose({ reset })
           </div>
           <div v-if="message.role === 'ai'" class="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
             <span v-if="message.meta?.mode">{{ message.meta.mode === 'cloud' ? 'DeepSeek' : '本地引擎' }}</span>
-            <span v-if="message.meta?.confidence">· 置信度 {{ Math.round(message.meta.confidence * 100) }}%</span>
+            <span v-if="message.meta?.kind === 'knowledge' && message.meta?.confidence">
+              · 置信度 {{ Math.round(message.meta.confidence * 100) }}%
+            </span>
             <span
               v-for="source in message.meta?.sources || []"
               :key="source"

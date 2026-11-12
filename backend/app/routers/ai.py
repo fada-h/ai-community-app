@@ -86,9 +86,9 @@ def ai_match(
     return {"matches": matches, "message": result["message"], "mode": result["mode"]}
 
 
-async def _stream_answer(message: str):
+async def _stream_answer(message: str, history: list[dict] | None = None):
     """SSE 生成器：先推送 meta，再逐块推送 delta，最后 done。"""
-    result = await asyncio.to_thread(service.answer, message)
+    result = await asyncio.to_thread(service.answer, message, history)
 
     # 记录调用（独立会话，避免请求级会话在流式期间关闭）
     try:
@@ -102,7 +102,8 @@ async def _stream_answer(message: str):
 
     meta = {
         "mode": result["mode"],
-        "confidence": result.get("confidence", 0),
+        "kind": result.get("kind", "chat"),
+        "confidence": result.get("confidence"),
         "sources": result.get("sources", []),
         "topic": result.get("topic", ""),
         "suggestions": result.get("suggestions", []),
@@ -118,8 +119,9 @@ async def _stream_answer(message: str):
 
 @router.post("/chat")
 def ai_chat(body: ChatIn):
+    history = [{"role": turn.role, "content": turn.content} for turn in body.history]
     return StreamingResponse(
-        _stream_answer(body.message.strip()),
+        _stream_answer(body.message.strip(), history),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

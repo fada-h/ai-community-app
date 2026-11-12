@@ -112,8 +112,14 @@ class MatchOut(BaseModel):
     mode: str
 
 
+class ChatTurn(BaseModel):
+    role: str
+    content: str
+
+
 class ChatIn(BaseModel):
     message: str = Field(min_length=1, max_length=500)
+    history: list[ChatTurn] = []
 
 
 class MessageIn(BaseModel):
