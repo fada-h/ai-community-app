@@ -1,11 +1,13 @@
 """AI 编排：DeepSeek 优先，失败自动降级到本地引擎。"""
+import json
 import logging
+import re
 
 import httpx
 
 from ..config import settings
 from . import engine
-from .knowledge import KNOWLEDGE
+from .knowledge import CATEGORY_MAP, KNOWLEDGE
 
 logger = logging.getLogger("qinghe.ai")
 
@@ -88,24 +90,60 @@ def answer(question: str) -> dict:
     return local
 
 
+WRITE_PROMPT = (
+    "你是校园社区的发帖助手。请把用户的一段口语化描述改写成一条适合校园社区发布的帖子。\n"
+    "只输出 JSON，不要任何解释、不要代码块标记，格式：\n"
+    '{"title":"不超过 26 字、语义完整的标题","content":"1-3 段正文，不超过 300 字","category":"study|club|market|lost|life","tags":["3-5 个关键词"]}\n'
+    "category 含义：study=学习互助 club=社团活动 market=二手闲置 lost=失物招领 life=校园生活。\n"
+    "保留用户原意，不要编造时间、地点、联系方式等未提供的信息。"
+)
+
+
+def _extract_json(text: str) -> dict | None:
+    """从模型输出中提取第一个 JSON 对象，兼容 ```json 代码块。"""
+    if not text:
+        return None
+    match = re.search(r"\{[\s\S]*\}", text)
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(0))
+        return data if isinstance(data, dict) else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def write(text: str) -> dict:
-    """发帖助手：云端润色，失败降级本地。"""
+    """发帖助手：云端生成标题/正文/分类/标签，失败降级本地。"""
     local = engine.writing_assistant(text)
     local["mode"] = "local"
 
     if settings.deepseek_api_key:
         reply = _chat(
             [
-                {
-                    "role": "system",
-                    "content": "你是校园社区的发帖助手。请把用户的一段话改写为适合校园社区发布的帖子正文："
-                    "保留原意，补全标点，分 1–3 段，不超过 300 字，只输出正文，不要标题和解释。",
-                },
+                {"role": "system", "content": WRITE_PROMPT},
                 {"role": "user", "content": text},
-            ]
+            ],
+            temperature=0.5,
+            max_tokens=700,
         )
         if reply:
-            local["content"] = reply
+            data = _extract_json(reply)
+            if data:
+                if data.get("title"):
+                    local["title"] = str(data["title"])[:40]
+                if data.get("content"):
+                    local["content"] = str(data["content"])[:3000]
+                category = data.get("category")
+                if category in CATEGORY_MAP:
+                    local["category"] = category
+                    local["category_name"] = CATEGORY_MAP[category]["name"]
+                tags = data.get("tags")
+                if isinstance(tags, list) and tags:
+                    local["tags"] = [str(tag)[:12] for tag in tags][:6]
+            else:
+                # 模型没按 JSON 返回时，至少保留润色后的正文
+                local["content"] = reply
             local["mode"] = "cloud"
 
     return local
