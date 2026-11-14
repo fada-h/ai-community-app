@@ -167,6 +167,31 @@ DEEPSEEK_MODEL=deepseek-chat
 
 不配置时 AI 自动使用本地引擎，完全离线可用。
 
+### 在线演示部署（可选加分项）
+
+项目支持**单服务部署**：FastAPI 直接托管前端构建产物，线上只有一个地址，前后端同源，无需额外配置 CORS 与 WebSocket。
+
+**Render 免费部署（推荐）**
+
+1. 注册 <https://render.com>，New → Blueprint，选择本仓库
+2. Render 自动读取 `render.yaml`，按 `Dockerfile` 构建
+3. 在 Environment 中填写 `DEEPSEEK_API_KEY`（不填则自动使用本地 AI 引擎，完全离线可用）
+4. 部署完成即得到 `https://xxx.onrender.com` 公网地址
+
+> 免费实例 15 分钟无访问会休眠，首次打开约需 30–60 秒；可用免费 cron 服务定时访问 `/api/health` 保活。
+
+**本地 Docker 验证**
+
+```bash
+docker build -t qinghe .
+docker run -p 8000:8000 -e DEEPSEEK_API_KEY=sk-xxx qinghe
+# 打开 http://127.0.0.1:8000
+```
+
+**演示/评审账号**：`zhouyihang / 123456`（普通用户）；管理员 `linxiaoman / 123456`。
+
+> 密钥只通过环境变量注入：`backend/.env`、`backend/.secret` 均在 `.gitignore` 与 `.dockerignore` 中排除，不会进入仓库或镜像。
+
 ---
 
 ## 五、5 分钟演示脚本

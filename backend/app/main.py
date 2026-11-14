@@ -6,10 +6,14 @@
     http://127.0.0.1:8000/docs
 """
 import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .db import SessionLocal, init_db
@@ -58,3 +62,27 @@ def health():
         "environment": settings.environment,
         "database": "sqlite" if settings.is_sqlite else "mysql",
     }
+
+
+# ---------------------------------------------------------------------------
+# 单服务部署：若存在前端构建产物，则由 FastAPI 直接托管 SPA。
+# 这样线上只需要一个公网地址，且前后端同源，免去 CORS 与 WebSocket 跨域问题。
+# 本地开发（frontend 未 build）时该段自动跳过，不影响 5173 热更新。
+# ---------------------------------------------------------------------------
+DIST_DIR = Path(
+    os.getenv("FRONTEND_DIST", str(Path(__file__).resolve().parents[2] / "frontend" / "dist"))
+)
+
+if DIST_DIR.is_dir():
+    if (DIST_DIR / "assets").is_dir():
+        app.mount("/assets", StaticFiles(directory=DIST_DIR / "assets"), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa_fallback(full_path: str):
+        """静态文件优先；其余路由交给前端（history 模式刷新不 404）。"""
+        if full_path.startswith(("api/", "docs", "redoc", "openapi.json")):
+            raise HTTPException(status_code=404, detail="Not Found")
+        candidate = DIST_DIR / full_path
+        if full_path and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(DIST_DIR / "index.html")

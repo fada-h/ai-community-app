@@ -1,0 +1,19 @@
+# Render 免费部署蓝图：一个 Web Service 同时提供前端与 API
+# 用法：Render → New → Blueprint → 选择本仓库 → Apply
+services:
+  - type: web
+    name: qinghe-campus
+    runtime: docker
+    plan: free
+    region: singapore
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: ENV
+        value: production
+      # 未配置 MySQL 时自动用 SQLite（容器内，重启重置为演示数据）
+      - key: ALLOW_SQLITE_FALLBACK
+        value: "1"
+      # 在 Render 控制台手动填写，不要写进仓库
+      - key: DEEPSEEK_API_KEY
+        sync: false
